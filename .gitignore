@@ -1,0 +1,5 @@
+# Ignore all file ending with the .o extension (they are 
+# the binaries that were build while building the project
+# and thus should not be added to the tree
+
+*.o
