@@ -1,9 +1,11 @@
-all: main.o disk.o
-	gcc main.o disk.o -o sfs
-
-
-main.o: main.c
-	gcc -c main.c -o main.o
-
+main: main.o disk.o sfs.o
+	gcc -o main main.o disk.o sfs.o 
+main.o: main.c disk.h sfs.h
+	gcc -c -g main.c
+sfs.o: sfs.c sfs.h
+	gcc -c -g sfs.c
 disk.o: disk.c disk.h
-	gcc -c disk.c -o disk.o
+	gcc -c -g disk.c
+
+clean:
+	rm -f main.o main disk.o sfs.o
