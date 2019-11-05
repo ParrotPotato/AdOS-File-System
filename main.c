@@ -26,13 +26,13 @@ void disk_test(){
 
 	printf("%d %d %d %d\n", test->blocks, test->reads, test->writes, test->size);
 	char* str = "qwertyuiopasdfghjjklzxcvbnm";
-	
+	// free(test);
 	write_block(fd1,1, str);
 
 	test = get_disk_stat(fd1);
 
 	printf("%d %d %d %d\n", test->blocks, test->reads, test->writes, test->size);
-
+	// free(test);
 	char reader[1024];
 
 	read_block(fd1, 1, reader);
@@ -40,18 +40,19 @@ void disk_test(){
 
 	test = get_disk_stat(fd1);
 	printf("%d %d %d %d\n", test->blocks, test->reads, test->writes, test->size);
+	// free(test);
 	printf("%s\n", reader);
-	close(fd1);
+	close_disk(fd1);
 
-	fd1 = open_disk(filename1);
+	// fd1 = open_disk(filename1);
 
 	
-	read_block(fd1, 1, reader);
+	// read_block(fd1, 1, reader);
 	
 
-	test = get_disk_stat(fd1);
-	printf("%d %d %d %d\n", test->blocks, test->reads, test->writes, test->size);
-	printf("%s\n", reader);
-	close(fd1);
+	// test = get_disk_stat(fd1);
+	// printf("%d %d %d %d\n", test->blocks, test->reads, test->writes, test->size);
+	// printf("%s\n", reader);
+	// close(fd1);
 	
 }

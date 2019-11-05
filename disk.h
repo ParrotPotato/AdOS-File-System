@@ -1,9 +1,11 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
+
 
 const static int BLOCKSIZE = 4*1024;
 
