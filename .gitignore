@@ -3,3 +3,5 @@
 # and thus should not be added to the tree
 
 *.o
+file*
+main
