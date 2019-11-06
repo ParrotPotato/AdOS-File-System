@@ -1,6 +1,12 @@
 #include "disk.h"
 
 
+/* 
+ * Creates a disk file with the given name and size 
+ * and writes the disk stat at the beginning of the 
+ * file. Opens the file in 700 permission.
+ */
+
 int create_disk(char *filename, int nbytes){
     int fd = open(filename, O_WRONLY|O_CREAT|O_TRUNC, S_IRWXU);
     
@@ -28,6 +34,11 @@ int create_disk(char *filename, int nbytes){
     return 0;
 }
 
+/*
+ * Opens the file (associated with the given disk name)
+ * in the read write mode with permission as 700
+ */
+
 int open_disk(char *filename){
     int fd = open(filename, O_RDWR, S_IRWXU);
     if(fd<0){
@@ -37,12 +48,25 @@ int open_disk(char *filename){
     return fd;
 }
 
+/* 
+ * Returns a disk_stat pointer pointing to object storing the 
+ * information for the disk index specified 
+ */
+
 disk_stat* get_disk_stat(int disk){
     disk_stat* stat = (disk_stat*)malloc(sizeof(disk_stat));
     off_t offset_out = lseek(disk, 0, SEEK_SET); 
     read(disk, stat, sizeof(disk_stat));
     return stat;
 }
+
+/* 
+ * Reads the given block index block from the disk file 
+ * associated with the given disk index. Checks for the valid 
+ * disk index and block index if valid stores the file data 
+ * in the provided buffer.(While checking for the associated 
+ * read return value for errors)
+ */
 
 int read_block(int disk, int blocknr, void *block_data){
     disk_stat* stat = (disk_stat*)malloc(sizeof(disk_stat));
@@ -64,6 +88,11 @@ int read_block(int disk, int blocknr, void *block_data){
     }
 
     int read_err = read(disk, block_data, 4096);
+
+    if(read_err<0){
+        perror("Disk Read error");
+        return -1;
+    }
     
     stat->reads++;
 
@@ -72,14 +101,17 @@ int read_block(int disk, int blocknr, void *block_data){
         perror("Read - Stat Update error");
         return -1;
     }
-
-    if(read_err<0){
-        perror("Disk Read error");
-        return -1;
-    }
+    
     free(stat);
     return 0;
 }
+/* 
+ * Writes the given block index block from the disk file 
+ * associated with the given disk index. Checks for the valid 
+ * disk index and block index if valid stores the file data 
+ * in the provided buffer. (While checking for the associated 
+ * write return value for errors)
+ */
 
 int write_block(int disk, int blocknr, void *block_data){
     disk_stat* stat = (disk_stat*)malloc(sizeof(disk_stat));
