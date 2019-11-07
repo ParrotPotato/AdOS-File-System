@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <math.h>
 
 
 const static int BLOCKSIZE = 4*1024;
