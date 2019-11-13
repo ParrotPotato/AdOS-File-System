@@ -2,6 +2,15 @@
 #include "disk.h"
 #include <math.h>
 
+
+int local_disk = -1;
+super_block sb;
+char *inode_bitmap;
+char* data_bitmap;
+int local_inode_num = -1;
+int local_data_block_num = -1;
+
+
 int nthMagicNo(int n) 
 { 
     int pow = 1, answer = 0; 
@@ -36,11 +45,100 @@ int unsetbit(char* bits, int index){
 }
 
 
-int local_disk;
-char *inode_bitmap;
-char* data_bitmap;
-int local_inode_num;
-int local_data_block_num;
+int checkMagicNumber(int mag){
+    for(int i=1;;i++)
+    {
+        int t = nthMagicNo(i);
+        if( t == i)
+            return 1;
+        if( t > i)
+            return 0;
+    }
+}
+
+inode load_inode(int inumber){
+    int block_no = sb.inode_block_idx +  inumber/128;
+    int block_offset = inumber%128;
+    char block_reader[BLOCKSIZE];
+    inode old_inode;
+    if(read_block(local_disk, block_no, block_reader) < 0){
+        perror("Inode Block read failed");
+        return old_inode;
+    }
+
+    memcpy(&old_inode,block_reader + block_offset*sizeof(inode), sizeof(inode));
+    return old_inode;
+}
+
+///////Functions to update the bitmaps///////////////////
+int update_inode_bitmap(super_block sb){
+
+    int inode_bitmap_block_start = 1;
+    int inode_bitmap_block_end  = sb.data_block_bitmap_idx;  
+
+    char writer[BLOCKSIZE];
+
+    for(int i=inode_bitmap_block_start;i<inode_bitmap_block_end;i++){
+        memcpy(writer, inode_bitmap + (i-inode_bitmap_block_start)*BLOCKSIZE, BLOCKSIZE);
+        if(write_block(local_disk, i, writer) < 0){
+            perror("File create error, unable to update inode bitmap");
+            return -1;
+        }   
+    }
+
+    return 0;
+}
+
+int update_data_bitmap(super_block sb){
+
+    int data_bitmap_block_start = sb.data_block_bitmap_idx;
+    int data_bitmap_block_end  = sb.inode_block_idx;  
+
+    char writer[BLOCKSIZE];
+
+    for(int i=data_bitmap_block_start;i<data_bitmap_block_end;i++){
+        memcpy(writer, data_bitmap + (i-data_bitmap_block_start)*BLOCKSIZE, BLOCKSIZE);
+        if(write_block(local_disk, i, writer) < 0){
+            perror("File create error, unable to update inode bitmap");
+            return -1;
+        }   
+    }
+
+    return 0;
+}
+
+int free_bitmaps(super_block sb, inode node){
+    int number_of_blocks = node.size%BLOCKSIZE == 0?node.size/BLOCKSIZE:node.size/BLOCKSIZE +1;
+
+    for(int i = 0;i<5 && i<number_of_blocks;i++){
+        unsetbit(data_bitmap, node.direct[i]);
+    }
+    if(number_of_blocks>5){
+        number_of_blocks -= 5;
+    }
+    else{
+        return update_inode_bitmap(sb) && update_data_bitmap(sb);
+    }
+
+    char rwer[BLOCKSIZE];
+
+    //Read the indirect pointer array
+    if(read_block(local_disk, node.indirect, rwer) < 0){
+        perror("Unable to free inode in remove file");
+        return -1;
+    }
+
+    for(int i=0;i<number_of_blocks;i++){
+        int block_no;
+        memcpy(&block_no, rwer + i*sizeof(int), sizeof(int));
+        unsetbit(data_bitmap, block_no);
+    }
+
+    return update_inode_bitmap(sb) && update_data_bitmap(sb);
+}
+
+
+/////////////////////Library functions/////////////////////////////////
 
 int format(int disk){
     
@@ -107,16 +205,6 @@ int format(int disk){
     return 0;
 }
 
-int checkMagicNumber(int mag){
-    for(int i=1;;i++)
-    {
-        int t = nthMagicNo(i);
-        if( t == i)
-            return 1;
-        if( t > i)
-            return 0;
-    }
-}
 
 int mount(int disk){
     char superBlockCopier[BLOCKSIZE];
@@ -125,7 +213,6 @@ int mount(int disk){
         return -1;
     }
 
-    super_block sb;
     memcpy(&sb, superBlockCopier, sizeof(super_block));
     if(!checkMagicNumber(sb.magic_number)){
         perror("Incorrect Magic Number during mount");
@@ -165,24 +252,6 @@ int mount(int disk){
     return 0;
 }
 
-int update_inode_bitmap(super_block sb){
-
-    int inode_bitmap_block_start = 1;
-    int inode_bitmap_block_end  = sb.data_block_bitmap_idx;  
-
-    char writer[BLOCKSIZE];
-
-    for(int i=inode_bitmap_block_start;i<inode_bitmap_block_end;i++){
-        memcpy(writer, inode_bitmap + (i-inode_bitmap_block_start)*BLOCKSIZE, BLOCKSIZE);
-        if(write_block(local_disk, i, writer) < 0){
-            perror("File create error, unable to update inode bitmap");
-            return -1;
-        }   
-    }
-
-    return 0;
-}
-
 int create_file(){
     int i;
     for(i=0;i<local_inode_num;i += 8)
@@ -193,22 +262,18 @@ int create_file(){
         }
     }
 
-    char superBlockCopier[BLOCKSIZE];
-    if(read_block(local_disk, 0, superBlockCopier) < 0){
-        perror("File create error, unable to mount super block");
-        return -1;
-    }
-
-    super_block sb;
-    memcpy(&sb, superBlockCopier, sizeof(super_block));
-    if(!checkMagicNumber(sb.magic_number)){
-        perror("Incorrect Magic Number during file creation");
+    if( i >= local_inode_num){
+        printf("No inode left to create file\n");
         return -1;
     }
 
     inode new_inode;
     new_inode.size = 0;
     new_inode.valid = 1;
+    for(int i=0;i<5;i++){
+        new_inode.direct[i] = -1;
+    }
+    new_inode.indirect = -1;
 
     int block_no = sb.inode_block_idx +  i/128;
     char block_reader[BLOCKSIZE];
@@ -226,4 +291,69 @@ int create_file(){
     }
 
     return update_inode_bitmap(sb);
+}
+
+
+int remove_file(int inumber){
+    
+    char block_reader[BLOCKSIZE];
+    int block_no = sb.inode_block_idx +  inumber/128;
+    int block_offset = inumber%128;
+    inode old_inode;
+
+    if(read_block(local_disk, block_no, block_reader) < 0){
+        perror("Remove file, inode read failed");
+        return -1;
+    }
+    old_inode.valid = 0;
+    unsetbit(inode_bitmap, inumber);
+    int r = free_bitmaps(sb, old_inode);
+    
+    if(r!=0){
+        perror("Unable to clear bitmaps in file remove");
+        return -1;
+    }
+    
+    memcpy(block_reader + block_offset*sizeof(inode), &old_inode, sizeof(inode));
+    if(write_block(local_disk, block_no, block_reader) < 0){
+        perror("File remove error, unable to write inode");
+        return -1;
+    }
+    return 0;
+}
+
+inode stat(int inumber){
+    inode old_inode;
+    old_inode.valid = 0;
+
+    int block_no = sb.inode_block_idx +  inumber/128;
+    char block_reader[BLOCKSIZE];
+    if(read_block(local_disk, block_no, block_reader) < 0){
+        perror("File create error, unable to mount read block");
+        return old_inode;
+    }
+
+    
+    int block_offset = inumber%128;
+    memcpy(&old_inode,block_reader + block_offset*sizeof(inode), sizeof(inode));
+
+    return old_inode;
+}
+
+int read_i(int inumber, char *data, int length, int offset){
+    if(getbit(inode_bitmap, inumber) == 0){
+        printf("Incorrect inode number in read_i\n");
+        return -1;
+    }
+    inode old_inode = load_inode(inumber);
+    if(offset>old_inode.size){
+        printf("Invalid offset\n");
+        return -1;
+    }
+
+    int read_len = min(length, old_inode.size - offset);
+
+    int number_of_blocks, start_block = offset/BLOCKSIZE,start_of = offset%BLOCKSIZE;
+
+    
 }
