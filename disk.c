@@ -12,7 +12,7 @@ int create_disk(char *filename, int nbytes){
     
     disk_stat d;
     
-    d.blocks = (int)(nbytes - sizeof(disk_stat))/4096;
+    d.blocks = (int)(nbytes - sizeof(disk_stat))/BLOCKSIZE;
     d.reads = 0;
     d.writes = 0;
     d.size = nbytes;
@@ -78,7 +78,7 @@ int read_block(int disk, int blocknr, void *block_data){
         perror("Read - Incorrect Block numebr");
         return -1;
     }
-    off_t offset_in = sizeof(disk_stat) + blocknr*4096;
+    off_t offset_in = sizeof(disk_stat) + blocknr*BLOCKSIZE;
     offset_out = lseek(disk, offset_in, SEEK_SET); 
 
     if(offset_in != offset_out)
@@ -87,7 +87,7 @@ int read_block(int disk, int blocknr, void *block_data){
         return -1;
     }
 
-    int read_err = read(disk, block_data, 4096);
+    int read_err = read(disk, block_data, BLOCKSIZE);
 
     if(read_err<0){
         perror("Disk Read error");
@@ -124,7 +124,7 @@ int write_block(int disk, int blocknr, void *block_data){
         return -1;
     }
 
-    off_t offset_in = sizeof(disk_stat) + blocknr*4096;
+    off_t offset_in = sizeof(disk_stat) + blocknr*BLOCKSIZE;
     offset_out = lseek(disk, offset_in, SEEK_SET); 
     
     if(offset_in != offset_out)
@@ -133,7 +133,7 @@ int write_block(int disk, int blocknr, void *block_data){
         return -1;
     }
 
-    int write_err = write(disk, block_data, 4096>(strlen((char*)block_data)+1)?(strlen((char*)block_data)+1):4096);
+    int write_err = write(disk, block_data, BLOCKSIZE);
 
     if(write_err<0){
         perror("Disk Write error");

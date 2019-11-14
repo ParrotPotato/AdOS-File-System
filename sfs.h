@@ -34,7 +34,7 @@ int create_file();
 
 int remove_file(int inumber);
 
-int stat(int inumber);
+inode stat(int inumber);
 
 int read_i(int inumber, char *data, int length, int offset);
 
