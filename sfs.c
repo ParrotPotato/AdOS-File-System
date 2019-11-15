@@ -526,3 +526,19 @@ int read_i(int inumber, char *data, int length, int offset){
 
 	return readingoffset;
 }
+}
+
+
+int getInodeNum(char* filepath){
+    return -1;
+}
+
+int read_file(char *filepath, char *data, int length, int offset){
+    int inode_num = getInodeNum(filepath);
+    if(inode_num<0){
+        printf("Retirval of inode_num from dir failed\n");
+        return -1;
+    }
+
+    return read_i(inode_num, data, length, offset);
+}
