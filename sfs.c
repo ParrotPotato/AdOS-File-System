@@ -72,7 +72,7 @@ inode load_inode(int inumber){
 }
 
 ///////Functions to update the bitmaps///////////////////
-int update_inode_bitmap(super_block sb){
+int update_inode_bitmap_on_disk(super_block sb){
 
     int inode_bitmap_block_start = 1;
     int inode_bitmap_block_end  = sb.data_block_bitmap_idx;  
@@ -90,7 +90,7 @@ int update_inode_bitmap(super_block sb){
     return 0;
 }
 
-int update_data_bitmap(super_block sb){
+int update_data_bitmap_on_disk(super_block sb){
 
     int data_bitmap_block_start = sb.data_block_bitmap_idx;
     int data_bitmap_block_end  = sb.inode_block_idx;  
@@ -118,7 +118,7 @@ int free_bitmaps(super_block sb, inode node){
         number_of_blocks -= 5;
     }
     else{
-        return update_inode_bitmap(sb) && update_data_bitmap(sb);
+        return update_inode_bitmap_on_disk(sb) && update_data_bitmap_on_disk(sb);
     }
 
     char rwer[BLOCKSIZE];
@@ -135,7 +135,7 @@ int free_bitmaps(super_block sb, inode node){
         unsetbit(data_bitmap, block_no);
     }
 
-    return update_inode_bitmap(sb) && update_data_bitmap(sb);
+    return update_inode_bitmap_on_disk(sb) && update_data_bitmap_on_disk(sb);
 }
 
 
@@ -291,7 +291,7 @@ int create_file(){
         return -1;
     }
 
-    return update_inode_bitmap(sb);
+    return update_inode_bitmap_on_disk(sb);
 }
 
 
@@ -525,4 +525,8 @@ int read_i(int inumber, char *data, int length, int offset){
 	}
 
 	return readingoffset;
+}
+
+int write_i(int inumber, char * data, int length, int offset)
+{
 }
