@@ -2,6 +2,7 @@
 #include "disk.h"
 #include <math.h>
 
+#define MIN(x,y) (x) > (y) ? (y) : (x) 
 
 int local_disk = -1;
 super_block sb;
@@ -340,6 +341,70 @@ inode stat(int inumber){
     return old_inode;
 }
 
+// Local function for getting block from given offset - nitesh
+//
+
+static int get_indirect_block(inode fileinode, int blockindex)
+{
+	int i=0;
+
+	char readbuffer[BLOCKSIZE];
+	
+	read_block(local_disk, fileinode.indirect, readbuffer);
+
+	return * (int  *) (readbuffer + 4 * blockindex);
+}
+
+
+static int get_indirect_block_index_by_block_no(inode fileinode, int blocknumber)
+{
+	const int maxentries = 1024;
+
+	int i = 0;
+
+	for(i = 0; i < maxentries ; i++)
+	{
+		if(get_indirect_block(fileinode, i) == blocknumber) return i;
+	}
+
+	return -1;
+}
+
+// TODO: Error checking for offset being more than the amount that 
+// can be stored in the reading data blocik -nitesh
+//
+static int get_block_for_offset(int offset, inode fileinode)
+{
+	// if offset in first 5 blocks then return one with the need 
+	if(offset <= 5 * BLOCKSIZE)
+		return fileinode.direct[offset / BLOCKSIZE];
+	
+	int off_directblocks = offset - 5 * BLOCKSIZE;
+
+	int index_in_indirect_block_pointer = off_directblocks/ BLOCKSIZE;
+	
+	return get_indirect_block(fileinode, index_in_indirect_block_pointer);
+}
+
+enum
+{
+	DIRECT,
+	INDIRECT
+};
+
+
+// NOTE: This function does not check the validity of the block 
+// it just returns DIRECT if block is there in the direct inode structure 
+// if not it returns INDIRECT  - nitesh
+
+static int get_block_type(inode fileinode, int block)
+{
+	int i=0 ;
+
+	for(i = 0 ; i < 5  ; i++) if(block == fileinode.direct[i]) return DIRECT;
+	else return INDIRECT;
+}
+
 int read_i(int inumber, char *data, int length, int offset){
     if(getbit(inode_bitmap, inumber) == 0){
         printf("Incorrect inode number in read_i\n");
@@ -351,9 +416,113 @@ int read_i(int inumber, char *data, int length, int offset){
         return -1;
     }
 
-    int read_len = min(length, old_inode.size - offset);
-
+    int read_len = MIN(length, old_inode.size - offset);
     int number_of_blocks, start_block = offset/BLOCKSIZE,start_of = offset%BLOCKSIZE;
-
     
+    // This is starting of my implementation 
+    //
+    // The following code may contain unnecessary number 
+    // of code branches (if statements that may have been
+    // condensed in a more elegant way)
+    // 					- nitesh
+
+	int currentblock = get_block_for_offset(offset, old_inode);
+	int type = get_block_type(old_inode, currentblock);
+	int directcounter = -1;
+	int indirectcounter = -1;
+	
+	// setting the counter for direct block
+
+	if(type == DIRECT)
+	{
+		for(; directcounter < 5 ; directcounter++)
+			if(old_inode.direct[directcounter] == currentblock) break;
+		if(directcounter == 5) directcounter = -1;
+	}
+	else 
+	{
+		indirectcounter = get_indirect_block_index_by_block_no(old_inode, currentblock);
+	}
+
+	char readingbuffer[BLOCKSIZE];
+	int  readingoffset = 0;
+	while(read_len > 0)
+	{
+		// Reading from disk 
+		read_block(local_disk, currentblock, readingbuffer);
+		
+		// putting data in buffer and updating the read count and
+		// remaining read count 
+
+		// for first iteration where we need to start copying from 
+		// some intermion position instead of the beginning of the 
+		// buffer 		- nitesh
+		if(start_of != 0)
+		{
+			if(start_of + read_len > BLOCKSIZE)
+			{
+				memcpy(data + readingoffset, readingbuffer + start_of, BLOCKSIZE - start_of);
+				readingoffset += BLOCKSIZE - start_of;
+				read_len -= BLOCKSIZE - start_of;
+				start_of = 0;
+			}
+			else 
+			{
+				memcpy(data + readingoffset, readingbuffer + start_of, read_len);
+				readingoffset += read_len;
+				read_len = 0; 
+				start_of = 0;
+				break;
+			}
+		}
+		
+		// here we will be copying the buffer from the beginning 
+		else 
+		{
+			if(read_len < BLOCKSIZE)
+			{
+				memcpy(data + readingoffset, readingbuffer, read_len);
+				readingoffset += read_len;
+				read_len = 0;
+				break;
+			}
+			else 
+			{
+				memcpy(data + readingoffset, readingbuffer, BLOCKSIZE);
+				readingoffset += BLOCKSIZE;
+				read_len -= BLOCKSIZE;
+			}
+		}
+
+		// updating the memory block for next read
+		// if the current block was in the direct block list of inode
+		//
+		// 			- nitesh
+		if(directcounter != -1)
+		{
+			directcounter += 1;
+			if(directcounter == 5)
+			{
+				directcounter = -1;
+				// get first indirect block 
+				
+				int temp = 0;
+				currentblock = get_indirect_block(old_inode, 0);
+				indirectcounter = 0;
+			}
+			else 
+			{
+				currentblock = old_inode.direct[directcounter];
+			}
+		}
+		// if the current block was in the indirect block list of inode
+		else 
+		{
+			currentblock = get_indirect_block(old_inode, indirectcounter + 1);
+			indirectcounter += 1;
+		}
+
+	}
+
+	return readingoffset;
 }
