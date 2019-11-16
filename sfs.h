@@ -28,7 +28,7 @@ typedef struct super_block {
 typedef struct dir_file{
 	int valid; // 0 - invalid
 	int type;// 0 for dir and 1 for file
-	char* name[MAXNAMESIZE];
+	char name[MAXNAMESIZE];
 	int name_size;
 	int inumber;
 } file_rep;
