@@ -74,6 +74,21 @@ inode load_inode(int inumber){
     return old_inode;
 }
 
+void store_inode(int inumber, inode inode_instance)
+{
+    int block_no = sb.inode_block_idx +  inumber/(BLOCKSIZE/sizeof(inode));
+    int block_offset = inumber%(BLOCKSIZE/sizeof(inode));
+    char block_reader[BLOCKSIZE];
+    inode old_inode;
+    if(read_block(local_disk, block_no, block_reader) < 0){
+        perror("Inode Block read failed");
+        return ;
+    }
+
+    memcpy(block_reader + block_offset * sizeof(inode), &inode_instance , sizeof(inode));
+    return;
+}
+
 ///////Functions to update the bitmaps///////////////////
 int update_inode_bitmap_on_disk(super_block sb){
 
@@ -864,6 +879,7 @@ int write_i(int inumber, char *data, int length, int offset)
 
 	char writingbuffer[BLOCKSIZE];
 	int writingoffset = 0;
+	int size = old_inode.size;
 
 	while(write_len > 0)
 	{
@@ -882,15 +898,17 @@ int write_i(int inumber, char *data, int length, int offset)
 				writingoffset += BLOCKSIZE - initialoffset;
 				write_len -= BLOCKSIZE - initialoffset;
 				initialoffset = 0;
+				size += BLOCKSIZE - initialoffset;
 			}
 			else 
 			{
-				memcpy(writingbuffer + initialoffset, data + writingoffset, initialoffset);
+				memcpy(writingbuffer + initialoffset, data + writingoffset, write_len);
 				write_block(local_disk, currentblock, writingbuffer);
 
-				writingoffset += initialoffset;
+				writingoffset += write_len;
 				write_len = 0;
 				initialoffset = 0;
+				size += write_len;
 				
 				break;
 			}
@@ -905,6 +923,7 @@ int write_i(int inumber, char *data, int length, int offset)
 
 				writingoffset  += write_len;
 				write_len  = 0;
+				size += write_len;
 				break;
 			}
 			else 
@@ -914,6 +933,7 @@ int write_i(int inumber, char *data, int length, int offset)
 
 				writingoffset  += BLOCKSIZE;
 				write_len  -= BLOCKSIZE;
+				size += BLOCKSIZE;
 				break;
 			}
 		}
@@ -945,6 +965,12 @@ int write_i(int inumber, char *data, int length, int offset)
 			indirectcounter += 1;
 		}
 	}
+	
+	old_inode.size = size;
+
+	store_inode(inumber, old_inode);
+
+	return writingoffset;
 }
 
 int read_file(char *filepath, char *data, int length, int offset){
