@@ -599,7 +599,7 @@ static int get_indirect_block_index_by_block_no(inode fileinode, int blocknumber
 static int get_block_for_offset(int offset, inode fileinode)
 {
 	// if offset in first 5 blocks then return one with the need 
-	if(offset <= 5 * BLOCKSIZE)
+	if(offset < 5 * BLOCKSIZE)
 		return fileinode.direct[offset / BLOCKSIZE];
 	
 	int off_directblocks = offset - 5 * BLOCKSIZE;
@@ -750,6 +750,228 @@ int read_i(int inumber, char *data, int length, int offset){
 	return readingoffset;
 }
 
+
+// Functions for helping the callers
+
+
+int set_data_block(int i)
+{
+	setbit(data_bitmap, i);
+}
+
+int unset_data_block(int i)
+{
+	unsetbit(data_bitmap, i);
+}
+
+int get_empty_data_block()
+{
+	unsigned int maxcount = 8 * BLOCKSIZE * (sb.inode_block_idx - sb.data_block_bitmap_idx);
+	
+	unsigned int i = 0 ;
+
+	for(i = 0; i < maxcount ; i++)
+	{
+		if(getbit(data_bitmap, i) == 0) return i;
+	}
+
+	return -1;
+}
+
+int allocate_data_blocks(inode  *fileinode, int blocks)
+{
+
+	if(blocks == 0) return 0;
+	
+	int currentlyallocated = fileinode->size / BLOCKSIZE;
+	int newallocated= 0;
+
+	if(currentlyallocated <5)
+	{
+		while(currentlyallocated < 5 && newallocated < blocks)
+		{
+			int temp = get_empty_data_block();
+			if(temp == -1) return newallocated;
+			
+			fileinode->direct[currentlyallocated] = temp;
+			currentlyallocated += 1;
+			newallocated += 1;
+
+			set_data_block(temp);
+		}
+		
+		if(newallocated == blocks) return newallocated;
+	}
+
+	currentlyallocated = currentlyallocated - 5 ;
+
+	char readingbuffer[BLOCKSIZE];
+	int indirectallocations = 0 ;
+	
+	// indirect block needs to be allocated to the file
+	if(currentlyallocated == 0)
+	{
+		int temp = get_empty_data_block();
+		if(temp == -1) return newallocated;
+
+		fileinode->indirect = temp;
+
+		set_data_block(temp);
+	}
+
+	read_block(local_disk, fileinode->indirect, readingbuffer);
+
+	while(newallocated < blocks && indirectallocations < 1024)
+	{
+		int temp = get_empty_data_block();
+		if(temp = -1){
+			write_block(local_disk, fileinode->indirect, readingbuffer);
+			return newallocated;
+		} 
+		
+		memcpy(readingbuffer + 4 * currentlyallocated, &temp, 4);
+
+		currentlyallocated += 1;
+		newallocated += 1;
+		indirectallocations += 1;
+
+		set_data_block(temp);
+	}
+
+	write_block(local_disk, fileinode->indirect, readingbuffer);
+
+	update_data_bitmap_on_disk(sb);
+
+	return newallocated;
+}
+
+int write_i(int inumber, char *data, int length, int offset)
+{
+	if(getbit(inode_bitmap, inumber) == 0)
+	{
+		printf("Incorrect Inumber\n");
+		return -1;
+	}
+	inode old_inode = load_inode(inumber);
+	if(offset > old_inode.size)
+	{
+		printf("Incorrect offset \n");
+		return -1;
+	}
+
+	int bytesrequired = (offset + length - old_inode.size);
+	int blocksrequired = bytesrequired / BLOCKSIZE;
+
+	int write_len = MIN(allocate_data_blocks(&old_inode, blocksrequired) * 8, length);
+	int initialoffset = offset % BLOCKSIZE;
+
+	if(write_len == 0) return 0;
+
+	int currentblock = get_block_for_offset(offset, old_inode);
+	int type = get_block_type(old_inode, currentblock);
+	int directcounter = -1;
+	int indirectcounter = -1;
+	
+	// setting the counter for direct block
+
+	if(type == DIRECT)
+	{
+		for(; directcounter < 5 ; directcounter++)
+			if(old_inode.direct[directcounter] == currentblock) break;
+		if(directcounter == 5) directcounter = -1;
+	}
+	else 
+	{
+		indirectcounter = get_indirect_block_index_by_block_no(old_inode, currentblock);
+	}
+
+	
+
+	char writingbuffer[BLOCKSIZE];
+	int writingoffset = 0;
+
+	while(write_len > 0)
+	{
+		// reading the file buffer
+		read_block(local_disk, currentblock, writingbuffer);
+
+
+		// modifying the file buffer
+		if(initialoffset != 0 )
+		{
+			if(initialoffset + write_len > BLOCKSIZE)
+			{
+				memcpy(writingbuffer + initialoffset, data + writingoffset, BLOCKSIZE - initialoffset);
+				write_block(local_disk, currentblock, writingbuffer);
+
+				writingoffset += BLOCKSIZE - initialoffset;
+				write_len -= BLOCKSIZE - initialoffset;
+				initialoffset = 0;
+			}
+			else 
+			{
+				memcpy(writingbuffer + initialoffset, data + writingoffset, initialoffset);
+				write_block(local_disk, currentblock, writingbuffer);
+
+				writingoffset += initialoffset;
+				write_len = 0;
+				initialoffset = 0;
+				
+				break;
+			}
+		}
+
+		else 
+		{
+			if(write_len < BLOCKSIZE)
+			{
+				memcpy(writingbuffer, data + writingoffset, write_len);
+				write_block(local_disk, currentblock, writingbuffer);
+
+				writingoffset  += write_len;
+				write_len  = 0;
+				break;
+			}
+			else 
+			{
+				memcpy(writingbuffer, data + writingoffset, BLOCKSIZE);
+				write_block(local_disk, currentblock, writingbuffer);
+
+				writingoffset  += BLOCKSIZE;
+				write_len  -= BLOCKSIZE;
+				break;
+			}
+		}
+
+
+		// updating to next block
+		
+		if(directcounter != -1)
+		{
+			directcounter += 1;
+			if(directcounter == 5)
+			{
+				directcounter = -1;
+				// get first indirect block 
+				
+				int temp = 0;
+				currentblock = get_indirect_block(old_inode, 0);
+				indirectcounter = 0;
+			}
+			else 
+			{
+				currentblock = old_inode.direct[directcounter];
+			}
+		}
+		// if the current block was in the indirect block list of inode
+		else 
+		{
+			currentblock = get_indirect_block(old_inode, indirectcounter + 1);
+			indirectcounter += 1;
+		}
+	}
+}
+
 int read_file(char *filepath, char *data, int length, int offset){
     char* token = strtok(filepath, "/");
 
@@ -817,7 +1039,7 @@ int init_inode(int inumber){
         printf("init_inode: Write Failed\n");
         return -1;
     }
-    return update_inode_bitmap(sb);
+    return update_inode_bitmap_on_disk(sb);
 }
 
 int getFreeInode(){
@@ -834,7 +1056,7 @@ int getFreeInode(){
         printf("No inode left to create file\n");
         return -1;
     }   
-    return update_inode_bitmap(sb);
+    return update_inode_bitmap_on_disk(sb);
 }
 
 int init_root_directory(){
