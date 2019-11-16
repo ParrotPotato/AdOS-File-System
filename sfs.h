@@ -1,7 +1,7 @@
 #include<stdint.h>
 
 const static uint32_t MAGIC = 12345;
-
+#define MAXNAMESIZE 50
 
 typedef struct inode {
 	uint32_t valid; // 0 if invalid
@@ -25,6 +25,13 @@ typedef struct super_block {
 	uint32_t data_blocks;  // Number of blocks reserved as data blocks
 } super_block;
 
+typedef struct dir_file{
+	int valid; // 0 - invalid
+	int type;// 0 for dir and 1 for file
+	char name[MAXNAMESIZE];
+	int name_size;
+	int inumber;
+} file_rep;
 
 int format(int disk);
 

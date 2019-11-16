@@ -6,3 +6,5 @@
 file*
 main
 *.swp
+.vscode/
+temp*
