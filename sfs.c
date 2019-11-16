@@ -1,4 +1,7 @@
 #include "sfs.h"
+
+#include "debug.h"
+
 #include "disk.h"
 #include <math.h>
 
@@ -70,7 +73,7 @@ inode load_inode(int inumber){
         return old_inode;
     }
 
-    memcpy(&old_inode,block_reader + block_offset*sizeof(inode), sizeof(inode));
+    memcpy(&old_inode,block_reader + block_offset* sizeof(inode), sizeof(inode));
     return old_inode;
 }
 
@@ -86,6 +89,7 @@ void store_inode(int inumber, inode inode_instance)
     }
 
     memcpy(block_reader + block_offset * sizeof(inode), &inode_instance , sizeof(inode));
+    write_block(local_disk, block_no, block_reader);
     return;
 }
 
@@ -165,7 +169,7 @@ inode getInode(int inumber){
     read.valid = 0;
     char reader[BLOCKSIZE];
     if(read_block(local_disk, block_no, reader) < 0){
-        printf("getInode: Read Failed\n");
+        debug("getInode: Read Failed\n");
         return read;
     }
     memcpy(&read, reader+ block_offset*sizeof(inode), sizeof(inode));
@@ -176,16 +180,25 @@ inode getInode(int inumber){
 
 //Find the file @name in the dir @inumber
 int findFile(int inumber, char* name){
-    inode dir_inode = getInode(inumber);
+    
+	debug_func_init();
+
+	inode dir_inode = getInode(inumber);
     int size = dir_inode.size;
     int number_of_files = size/sizeof(file_rep);
     int number_of_reps_in_block = BLOCKSIZE/sizeof(file_rep);
     int number_of_blocks = number_of_files/number_of_reps_in_block;
 
+    debug("Inumber for directory = %d\n", inumber);
+    debug("Size of inode : %d\n", size);
+    debug("Number of files : %d\n", number_of_files);
+    debug("Number of reps in block : %d\n", number_of_reps_in_block);
+    debug("Number of blocks : %d\n", number_of_blocks);
+    
     char reader[BLOCKSIZE];
     for(int i=0;i<5 && i<number_of_blocks;i++){
         if(read_block(local_disk, dir_inode.direct[i], reader)<0){
-            printf("FindFile - Block read error\n");
+            debug("FindFile - Block read error\n");
             return -1;
         }
 
@@ -201,12 +214,12 @@ int findFile(int inumber, char* name){
     number_of_blocks -= 5;
     
     if(number_of_blocks<=0){
-        printf("findFile - Name not found in directory\n");
+        debug("findFile - Name not found in directory\n");
         return -1;
     }
     char inode_list[BLOCKSIZE];
     if(read_block(local_disk, dir_inode.indirect, inode_list)<0){
-        printf("FindFile - Indirect Block read error\n");
+        debug("FindFile - Indirect Block read error\n");
         return -1;
     }
 
@@ -215,7 +228,7 @@ int findFile(int inumber, char* name){
         memcpy(&blockno, inode_list + i*sizeof(int), sizeof(int));
 
         if(read_block(local_disk, blockno, reader)<0){
-            printf("FindFile - Block read error\n");
+            debug("FindFile - Block read error\n");
             return -1;
         }
 
@@ -228,7 +241,7 @@ int findFile(int inumber, char* name){
         }
     }
 
-    printf("findFile - File Not found\n");
+    debug("findFile - File Not found\n");
     return -1;
 
 }
@@ -236,7 +249,7 @@ int findFile(int inumber, char* name){
 int getInodeFromName(int inumber, char* token){
     int new_inode_num = findFile(inumber, token);// Find the file specified by token
     if(new_inode_num<0){
-        printf("File not found while searching %s in inode %d\n", token, inumber);
+        debug("File not found while searching %s in inode %d\n", token, inumber);
         return -1;
     }
     token = strtok(NULL, "/"); // Get the next token
@@ -250,7 +263,7 @@ int getInodeFromName(int inumber, char* token){
 
 //Create a file named @name in the directory with @inumber and @type
 int initFile(int inumber, char* name, int type){
-
+	debug_func_init();
     /**
      * Find the details of the existing directory structure, so that reuse is possible. 
      */  
@@ -259,17 +272,28 @@ int initFile(int inumber, char* name, int type){
     int number_of_files = size/sizeof(file_rep);
     int number_of_reps_in_block = BLOCKSIZE/sizeof(file_rep);
     int number_of_blocks = number_of_files/number_of_reps_in_block;
-    printf("Number_of_blocls = %d\n", number_of_blocks);
+	
+    debug("Inumber for directory = %d\n", inumber);
+    debug("Size of inode : %d\n", size);
+    debug("Number of files : %d\n", number_of_files);
+    debug("Number of reps in block : %d\n", number_of_reps_in_block);
+    debug("Number of blocks : %d\n", number_of_blocks);
+    
+    
     /**
      * Start reading the blocks starting with the direct. If we find a file_rep that
      * is free, then we essentially  replace it with a new structure. 
      */ 
     char reader[BLOCKSIZE];
-    for(int i=0;i<5 && i<number_of_blocks;i++){
+    int i=0;
+    for(i=0;i<5 && i<number_of_blocks;i++){
         if(read_block(local_disk, dir_inode.direct[i], reader)<0){
-            printf("initFile - Block read error\n");
+            debug("initFile - Block read error\n");
             return -1;
         }
+
+	debug("\n");
+	debug("Read direct %d from local_disk\n", i);
 
         for(int j = 0;j<number_of_reps_in_block && j<(number_of_files - i*number_of_reps_in_block);j++){
             file_rep rep;
@@ -283,7 +307,7 @@ int initFile(int inumber, char* name, int type){
                 memcpy(reader + j*sizeof(file_rep), &rep,  sizeof(file_rep));
 
                 if(write_block(local_disk, dir_inode.direct[i], reader)<0){
-                    printf("initFile - Block write error\n");
+                    debug("initFile - Block write error\n");
                     return -1;
                 }
                 else
@@ -299,7 +323,7 @@ int initFile(int inumber, char* name, int type){
     if(number_of_blocks>0){
         char inode_list[BLOCKSIZE];
         if(read_block(local_disk, dir_inode.indirect, inode_list)<0){
-            printf("initFile - Indirect Block read error\n");
+            debug("initFile - Indirect Block read error\n");
             return -1;
         }
 
@@ -309,7 +333,7 @@ int initFile(int inumber, char* name, int type){
             memcpy(&blockno, inode_list + i*sizeof(int), sizeof(int));
 
             if(read_block(local_disk, blockno, reader)<0){
-                printf("initFile - Block read error\n");
+                debug("initFile - Block read error\n");
                 return -1;
             }
 
@@ -324,7 +348,7 @@ int initFile(int inumber, char* name, int type){
                     rep.inumber = getFreeInode();
                     memcpy(reader + j*sizeof(file_rep), &rep,  sizeof(file_rep));
                     if(write_block(local_disk, blockno, reader)<0){
-                        printf("initFile - Block write error\n");
+                        debug("initFile - Block write error\n");
                         return -1;
                     }
                     else{
@@ -342,14 +366,30 @@ int initFile(int inumber, char* name, int type){
     rep.valid = 1;
     rep.name_size = strlen(name);
     strcpy(rep.name, name);
+
+    debug_add_call_layer();
     rep.inumber = getFreeInode();
+    debug_remove_call_layer();
+    
     char* writer = (char*)malloc(sizeof(file_rep));
     memcpy(writer, &rep, sizeof(file_rep));
+	
+    	debug("File Rep Type : %d\n", rep.type);
+	debug("File Rep valid: %d\n", rep.valid);
+	debug("File Rep name : %s (%d) \n", rep.name, rep.name_size);
+	
+	debug_add_call_layer();
     if( write_i(inumber, writer, sizeof(file_rep),dir_inode.size) < 0){
-        printf("initFile- Unable to write new file_rep\n");
+        debug("initFile- Unable to write new file_rep\n");
         return -1;
     }
-    return init_inode(rep.inumber);
+    	debug_remove_call_layer();
+
+
+    debug_add_call_layer();
+    int ret = init_inode(rep.inumber);
+    debug_remove_call_layer();
+    return ret;
 }
 
 //Recursively find the directory where the new directory has to be created
@@ -444,16 +484,17 @@ int format(int disk){
 
 
 int mount(int disk){
-    char superBlockCopier[BLOCKSIZE];
+    debug_func_init();
+	char superBlockCopier[BLOCKSIZE];
     if(read_block(disk, 0, superBlockCopier) < 0){
-        perror("Mount error, unable to mount super block");
+        debug("Mount error, unable to mount super block\n");
         return -1;
     }
 
     memcpy(&sb, superBlockCopier, sizeof(super_block));
     if(checkMagicNumber(sb.magic_number)){
-        printf("sb.magicNumber = %d\n", sb.magic_number);
-        perror("Incorrect Magic Number during mount");
+        debug("sb.magicNumber = %d\n", sb.magic_number);
+        debug("Incorrect Magic Number during mount\n");
         return -1;
     }
 
@@ -461,7 +502,7 @@ int mount(int disk){
 
     int number_of_inodeb_blocks = sb.data_block_bitmap_idx - 1 ;
     int number_of_datab_blocks = sb.inode_block_idx - sb.data_block_bitmap_idx;
-    printf("No of databblocks %d\n",number_of_inodeb_blocks);
+    debug("No of databblocks %d\n",number_of_inodeb_blocks);
     inode_bitmap = (char*) malloc(number_of_inodeb_blocks*sizeof(char)*BLOCKSIZE);
     data_bitmap = (char*) malloc(number_of_datab_blocks*sizeof(char)*BLOCKSIZE);
 
@@ -491,17 +532,24 @@ int mount(int disk){
 }
 
 int create_file(char* filename1){
-    int inumber = 0;
+    debug_func_init();
+	int inumber = 0;
     char filename[MAXNAMESIZE];
     strcpy(filename, filename1);
     
     char* token1 = strtok(filename, "/");
-    printf("Debug line %s\n", filename);
+    debug("Debug line %s\n", filename);
     
     char* token2 = strtok(NULL, "/");
-    
+	
+    debug("token1:%s\n", token1);
+    debug("token2:%s\n", token2);
+
     if(token2 == NULL){
-        return initFile(inumber,token1, 1);
+	    debug_add_call_layer();
+	int ret = initFile(inumber, token1, 1);
+	    debug_remove_call_layer();
+        return ret;
     }
     else{
         return findDir(inumber, token1, token2, 1);
@@ -620,12 +668,12 @@ static int get_block_type(inode fileinode, int block)
 
 int read_i(int inumber, char *data, int length, int offset){
     if(getbit(inode_bitmap, inumber) == 0){
-        printf("Incorrect inode number in read_i\n");
+        debug("Incorrect inode number in read_i\n");
         return -1;
     }
     inode old_inode = load_inode(inumber);
     if(offset>old_inode.size){
-        printf("Invalid offset\n");
+        debug("Invalid offset\n");
         return -1;
     }
 
@@ -837,25 +885,34 @@ int allocate_data_blocks(inode  *fileinode, int blocks)
 
 int write_i(int inumber, char *data, int length, int offset)
 {
+	debug_func_init();
 	if(getbit(inode_bitmap, inumber) == 0)
 	{
-		printf("Incorrect Inumber\n");
+		debug("Incorrect Inumber\n");
 		return -1;
 	}
 	inode old_inode = load_inode(inumber);
 	if(offset > old_inode.size)
 	{
-		printf("Incorrect offset \n");
+		debug("Incorrect offset \n");
 		return -1;
 	}
 
 	int bytesrequired = (offset + length - old_inode.size);
-	int blocksrequired = bytesrequired / BLOCKSIZE;
+	int blocksrequired = bytesrequired % BLOCKSIZE == 0 ? bytesrequired / BLOCKSIZE : bytesrequired / BLOCKSIZE + 1;
 
 	int write_len = MIN(allocate_data_blocks(&old_inode, blocksrequired) * 8, length);
 	int initialoffset = offset % BLOCKSIZE;
+	debug("bytesrequired = %d\n", bytesrequired);
+	debug("blocksrequired = %d\n", blocksrequired);
+	debug("Write_len = %d\n", write_len);
+	debug("initialoffset = %d\n", initialoffset);
 
-	if(write_len == 0) return 0;
+	if(write_len == 0) 
+	{
+		debug("Write len calculated to be 0 : Returning \n");
+		return 0;
+	}
 
 	int currentblock = get_block_for_offset(offset, old_inode);
 	int type = get_block_type(old_inode, currentblock);
@@ -863,6 +920,7 @@ int write_i(int inumber, char *data, int length, int offset)
 	int indirectcounter = -1;
 	
 	// setting the counter for direct block
+	
 
 	if(type == DIRECT)
 	{
@@ -978,14 +1036,14 @@ int read_file(char *filepath, char *data, int length, int offset){
 
     if(token == NULL)
     {
-        printf("Incorrect file name\n");
+        debug("Incorrect file name\n");
         return -1;
     }
     //Recursively decide the inode number of the file to read 
     int inode_num = getInodeFromName(0, token);
     
     if(inode_num<0){
-        printf("Retirval of inode_num from dir failed\n");
+        debug("Retirval of inode_num from dir failed\n");
         return -1;
     }
 
@@ -994,37 +1052,42 @@ int read_file(char *filepath, char *data, int length, int offset){
 
 
 int write_file(char *filepath, char *data, int length, int offset){
-    char* token = strtok(filepath, "/");
+    debug_func_init();
+	char* token = strtok(filepath, "/");
     
     if(token == NULL)
     {
-        printf("Incorrect file name\n");
+        debug("Incorrect file name\n");
         return -1;
     }
     //Recursively decide the inode number of the file to read 
     int inode_num = getInodeFromName(0, token);
     
     if(inode_num<0){
-        printf("Retirval of inode_num from dir failed\n");
+        debug("Retirval of inode_num from dir failed\n");
         return -1;
     }
-
-    return write_i(inode_num, data, length, offset);
+    	debug_add_call_layer();
+	int ret = write_i(inode_num, data, length, offset);
+	debug_remove_call_layer();
+    return ret;
 }
 
 //Initialise the inode @inumber
 int init_inode(int inumber){
-    /**
+   debug_func_init(); 
+	/**
      * Set the inode bitmap
      */
     setbit(inode_bitmap, inumber);
     
     int block_no = sb.inode_block_idx +  inumber/(BLOCKSIZE/sizeof(inode));
     int block_offset = inumber%(BLOCKSIZE/sizeof(inode));
+	
 
     char reader[BLOCKSIZE];
     if(read_block(local_disk, block_no, reader) < 0){
-        printf("init_inode: Read Failed\n");
+        debug("init_inode: Read Failed\n");
         return -1;
     }
     inode read;
@@ -1033,31 +1096,38 @@ int init_inode(int inumber){
     read.indirect = -1;
     for(int i=0;i<5;i++)
         read.direct[i] = -1;
-    
+	
+    	debug("Inode Inumber : %d\n", inumber);
+	debug("Inode valid : %d\n", read.valid);
+	debug("Inode size  : %d\n", read.size);
+	debug("Inode indirect : %d\n", read.indirect);
+
     memcpy(reader+ block_offset*sizeof(inode), &read, sizeof(inode));
 
     if(write_block(local_disk, block_no, reader) < 0){
-        printf("init_inode: Write Failed\n");
+        debug("init_inode: Write Failed\n");
         return -1;
     }
     return update_inode_bitmap_on_disk(sb);
 }
 
 int getFreeInode(){
+	debug_func_init();
     int i;
     for(i=0;i<local_inode_num;i++)
     {
         if(getbit(inode_bitmap, i) == 0){
-            setbit(inode_bitmap, i);
             break;   
         }
     }
 
     if( i >= local_inode_num){
-        printf("No inode left to create file\n");
+        debug("No inode left to create file\n");
         return -1;
     }   
-    return update_inode_bitmap_on_disk(sb);
+    //return update_inode_bitmap_on_disk(sb);
+    debug("Returning %d\n", i);
+   	return i;
 }
 
 int init_root_directory(){
@@ -1100,7 +1170,7 @@ int findRemoveFile(int inumber, char* name){
     char reader[BLOCKSIZE];
     for(int i=0;i<5 && i<number_of_blocks;i++){
         if(read_block(local_disk, dir_inode.direct[i], reader)<0){
-            printf("FindRemoveFile - Block read error\n");
+            debug("FindRemoveFile - Block read error\n");
             return -1;
         }
 
@@ -1111,7 +1181,7 @@ int findRemoveFile(int inumber, char* name){
                 rep.valid = 0;
                 memcpy(reader + j*sizeof(file_rep), &rep, sizeof(file_rep));
                 if(write_block(local_disk, dir_inode.direct[i], reader)<0){
-                    printf("FindRemoveFile - Block write error\n");
+                    debug("FindRemoveFile - Block write error\n");
                     return -1;
                 }
             }  
@@ -1121,12 +1191,12 @@ int findRemoveFile(int inumber, char* name){
     number_of_blocks -= 5;
     
     if(number_of_blocks<=0){
-        printf("findFile - Name not found in directory\n");
+        debug("findFile - Name not found in directory\n");
         return -1;
     }
     char inode_list[BLOCKSIZE];
     if(read_block(local_disk, dir_inode.indirect, inode_list)<0){
-        printf("FindFile - Indirect Block read error\n");
+        debug("FindFile - Indirect Block read error\n");
         return -1;
     }
 
@@ -1135,7 +1205,7 @@ int findRemoveFile(int inumber, char* name){
         memcpy(&blockno, inode_list + i*sizeof(int), sizeof(int));
 
         if(read_block(local_disk, blockno, reader)<0){
-            printf("FindRemoveFile - Block read error\n");
+            debug("FindRemoveFile - Block read error\n");
             return -1;
         }
 
@@ -1146,21 +1216,21 @@ int findRemoveFile(int inumber, char* name){
                 rep.valid = 0;
                 memcpy(reader + j*sizeof(file_rep), &rep, sizeof(file_rep));
                 if(write_block(local_disk,blockno, reader)<0){
-                    printf("FindRemoveFile - Block write error\n");
+                    debug("FindRemoveFile - Block write error\n");
                     return -1;
                 }
             }  
         }
     }
 
-    printf("findFile - File Not found\n");
+    debug("findFile - File Not found\n");
     return -1;
 
 }
 
 int remove_dir(char* dirpath){
     if(strcmp(dirpath, "/") == 0){
-       printf("Can't remove root dir\n");
+       debug("Can't remove root dir\n");
        return -1;
     }       
     int inumber = getInodeFromName(0, dirpath);
@@ -1174,7 +1244,7 @@ int remove_dir(char* dirpath){
     char reader[BLOCKSIZE];
     for(int i=0;i<5 && i<number_of_blocks;i++){
         if(read_block(local_disk, dir_inode.direct[i], reader)<0){
-            printf("FindFile - Block read error\n");
+            debug("FindFile - Block read error\n");
             return -1;
         }
 
@@ -1195,13 +1265,13 @@ int remove_dir(char* dirpath){
     number_of_blocks -= 5;
     
     if(number_of_blocks<=0){
-        printf("remove_dir - Name not found in directory\n");
+        debug("remove_dir - Name not found in directory\n");
         return -1;
     }
 
     char inode_list[BLOCKSIZE];
     if(read_block(local_disk, dir_inode.indirect, inode_list)<0){
-        printf("remove_dir - Indirect Block read error\n");
+        debug("remove_dir - Indirect Block read error\n");
         return -1;
     }
 
@@ -1210,7 +1280,7 @@ int remove_dir(char* dirpath){
         memcpy(&blockno, inode_list + i*sizeof(int), sizeof(int));
 
         if(read_block(local_disk, blockno, reader)<0){
-            printf("FindFile - Block read error\n");
+            debug("FindFile - Block read error\n");
             return -1;
         }
 

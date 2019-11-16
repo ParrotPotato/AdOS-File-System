@@ -16,10 +16,12 @@ void add_debug_padding()
 void debug_add_call_layer()
 {
 	debug_depth += 1;
+	printf("\n");
 }
 
 
 void debug_remove_call_layer()
 {
 	debug_depth -= 1;
+	printf("\n");
 }
