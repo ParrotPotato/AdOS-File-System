@@ -37,7 +37,7 @@ int format(int disk);
 
 int mount(int disk);
 
-int create_file();
+int create_file(char* filename);
 
 int remove_file(int inumber);
 
